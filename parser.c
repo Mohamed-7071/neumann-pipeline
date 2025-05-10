@@ -3,11 +3,12 @@
 #include <string.h>
 #include <stdint.h>
 #include <ctype.h>
+#include "memory.c" 
 
 #define FILENAME "program.txt"
 #define MAX_INSTRUCTIONS 1024
 
-uint32_t instruction_memory[MAX_INSTRUCTIONS];
+uint32_t instruction_memory[MAX_INSTRUCTIONS]; 
 
 
 char *trim_whitespace(char *str) {
@@ -19,29 +20,29 @@ char *trim_whitespace(char *str) {
     return str;
 }
 
-// btrag3 integer mn string ...R5--->5 
+// bt convert register string to int ex R5 --> 5
 int reg_to_int(const char *reg) {
     if (reg[0] != 'R') return -1;
     return atoi(reg + 1);
 }
 
 int32_t parse_immediate(const char *imm_str) {
-    return atoi(imm_str); // Signed 2's complement by default
+    return atoi(imm_str); 
 }
 
 
 uint32_t encode_r_type(int opcode, int r1, int r2, int r3, int shamt) {
-    return (opcode << 28) | (r1 << 23) | (r2 << 18) | (r3 << 13) | (shamt & 0x1FFF); // bygeeb binary value 
+    return (opcode << 28) | (r1 << 23) | (r2 << 18) | (r3 << 13) | (shamt & 0x1FFF);
 }
 
 
 uint32_t encode_i_type(int opcode, int r1, int r2, int32_t imm) {
-    return (opcode << 28) | (r1 << 23) | (r2 << 18) | (imm & 0x3FFFF); 
+    return (opcode << 28) | (r1 << 23) | (r2 << 18) | (imm & 0x3FFFF);
 }
 
 
 uint32_t encode_j_type(int opcode, int address) {
-    return (opcode << 28) | (address & 0x0FFFFFFF); // 28-bit address
+    return (opcode << 28) | (address & 0x0FFFFFFF);
 }
 
 
@@ -55,7 +56,7 @@ void print_binary(uint32_t value) {
 uint32_t parse_instruction(const char *line) {
     char instr[10], op1[10], op2[10], op3[10];
     int opcode = -1;
-    int tokens = sscanf(line, "%s %s %s %s", instr, op1, op2, op3);
+    sscanf(line, "%s %s %s %s", instr, op1, op2, op3);
 
     for (int i = 0; instr[i]; i++) instr[i] = toupper(instr[i]);
 
@@ -77,19 +78,19 @@ uint32_t parse_instruction(const char *line) {
     }
 
     switch (opcode) {
-        case 0: case 1: case 2: case 3: // R-type: ADD, SUB, AND, OR
+        case 0: case 1: case 2: case 3:
             return encode_r_type(opcode, reg_to_int(op1), reg_to_int(op2), reg_to_int(op3), 0);
-        case 4: case 5: // LSL, LSR (shift amount is SHAMT in op3)
+        case 4: case 5:
             return encode_r_type(opcode, reg_to_int(op1), reg_to_int(op2), 0, atoi(op3));
-        case 6: // MOVI (R2 = 0)
+        case 6:
             return encode_i_type(opcode, reg_to_int(op1), 0, parse_immediate(op2));
-        case 7: // JEQ
+        case 7:
             return encode_i_type(opcode, reg_to_int(op1), reg_to_int(op2), parse_immediate(op3));
-        case 8: // J (unconditional jump)
+        case 8:
             return encode_j_type(opcode, parse_immediate(op1));
-        case 9: case 10: // LW, SW
+        case 9: case 10:
             return encode_i_type(opcode, reg_to_int(op1), reg_to_int(op2), parse_immediate(op3));
-        case 11: // NOP
+        case 11:
             return 0x00000000;
         default:
             fprintf(stderr, "Invalid opcode: %d\n", opcode);
@@ -98,6 +99,11 @@ uint32_t parse_instruction(const char *line) {
 }
 
 int main() {
+    init_memory(); // btsahel 3alaya 7etet el write fel memory file
+
+    
+    
+
     FILE *file = fopen(FILENAME, "r");
     if (!file) {
         perror("Error opening file");
@@ -122,5 +128,12 @@ int main() {
     }
 
     fclose(file);
+
+    write_instruction_memory(instruction_memory);
+
+
+     print_memory();
+
     return EXIT_SUCCESS;
 }
+    
