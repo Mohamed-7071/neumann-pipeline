@@ -8,3 +8,8 @@ check el pdf 3alashan mosh same implementation zai el lecs w mosh fully capable 
 of them is active at a given clock cycle.")
 
 also regs not initialized most prob hane7tag n3ml el logic w  m7tageen 0 reg.
+
+to run the code
+gcc parser.c -o parser  (if needed)
+
+write  f terminal parser.exe 
