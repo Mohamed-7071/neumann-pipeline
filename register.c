@@ -8,6 +8,7 @@ void init_registers() {
     for (int i = 0; i < NUM_REGISTERS; i++) {
         registers[i] = 0;
     }
+    registers[0] = 0;  // R0 is hard-wired to zero
     PC = 0;
 }
 

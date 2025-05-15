@@ -99,11 +99,10 @@ uint32_t parse_instruction(const char *line) {
 }
 
 int main() {
+    init_registers(); 
     init_memory(); // btsahel 3alaya 7etet el write fel memory file
 
     
-    
-
     FILE *file = fopen(FILENAME, "r");
     if (!file) {
         perror("Error opening file");
