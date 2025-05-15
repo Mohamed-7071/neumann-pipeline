@@ -59,19 +59,21 @@ uint32_t parse_instruction(const char *line) {
     sscanf(line, "%s %s %s %s", instr, op1, op2, op3);
 
     for (int i = 0; instr[i]; i++) instr[i] = toupper(instr[i]);
-
+    //R
     if (strcmp(instr, "ADD") == 0) opcode = 0;
     else if (strcmp(instr, "SUB") == 0) opcode = 1;
     else if (strcmp(instr, "AND") == 0) opcode = 2;
     else if (strcmp(instr, "OR")  == 0) opcode = 3;
     else if (strcmp(instr, "LSL") == 0) opcode = 4;
     else if (strcmp(instr, "LSR") == 0) opcode = 5;
+    //I
     else if (strcmp(instr, "MOVI") == 0) opcode = 6;
     else if (strcmp(instr, "JEQ")  == 0) opcode = 7;
-    else if (strcmp(instr, "J")    == 0) opcode = 8;
+    else if (strcmp(instr, "NOP")    == 0) opcode = 8;
     else if (strcmp(instr, "LW")   == 0) opcode = 9;
     else if (strcmp(instr, "SW")   == 0) opcode = 10;
-    else if (strcmp(instr, "NOP")  == 0) opcode = 11;
+    //J
+    else if (strcmp(instr, "J")  == 0) opcode = 11;
     else {
         fprintf(stderr, "Unknown instruction: %s\n", instr);
         exit(EXIT_FAILURE);
