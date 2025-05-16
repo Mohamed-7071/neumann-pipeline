@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include "pipeline.h"
+#include "main.h"
 
 // Mock memory read/write functions
 uint32_t read_memory(uint32_t address) {

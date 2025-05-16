@@ -1,140 +1,156 @@
+#include "pipeline.h"
+#include "memory.h"
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <stdint.h>
-#include <ctype.h>
-#include "memory.c" 
+#include "main.h"
 
-#define FILENAME "program.txt"
-#define MAX_INSTRUCTIONS 1024
+int cycle = 1;
+uint32_t registers[32]; // Simple register file
 
-uint32_t instruction_memory[MAX_INSTRUCTIONS]; 
+// Structs for instruction decoding
+struct instruction_R {
+    uint32_t opcode : 4;
+    uint32_t r1 : 5;
+    uint32_t r2 : 5;
+    uint32_t r3 : 5;
+    uint32_t shamt : 13;
+};
 
+struct instruction_I {
+    uint32_t opcode : 4;
+    uint32_t r1 : 5;
+    uint32_t r2 : 5;
+    uint32_t imm : 18;
+};
 
-char *trim_whitespace(char *str) {
-    while (isspace(*str)) str++;
-    if (*str == 0) return str;
-    char *end = str + strlen(str) - 1;
-    while (end > str && isspace(*end)) end--;
-    *(end + 1) = '\0';
-    return str;
-}
+struct instruction_J {
+    uint32_t opcode : 4;
+    uint32_t address : 28;
+};
 
-// bt convert register string to int ex R5 --> 5
-int reg_to_int(const char *reg) {
-    if (reg[0] != 'R') return -1;
-    return atoi(reg + 1);
-}
+// Function prototypes
+uint32_t instruction_fetch(uint32_t instruction_memory[], uint32_t *pc, int num_instructions);
+void instruction_decode(uint32_t if_id_register, uint32_t *id_ex_register);
+void execute(uint32_t id_ex_register, uint32_t *ex_mem_register, uint32_t *pc);
+void memory_access(uint32_t ex_mem_register, uint32_t *mem_wb_register);
+void write_back(uint32_t mem_wb_register);
 
-int32_t parse_immediate(const char *imm_str) {
-    return atoi(imm_str); 
-}
+void run_pipeline(uint32_t instruction_memory[], int num_instructions) {
+    uint32_t pc = 0;
+    uint32_t if_id_register = 0;
+    uint32_t id_ex_register = 0;
+    uint32_t ex_mem_register = 0;
+    uint32_t mem_wb_register = 0;
 
+    while (pc < num_instructions || if_id_register || id_ex_register || ex_mem_register || mem_wb_register) {
+        if (cycle % 2 != 0) {
+            if_id_register = instruction_fetch(instruction_memory, &pc, num_instructions);
+        } else {
+            memory_access(ex_mem_register, &mem_wb_register);
+        }
 
-uint32_t encode_r_type(int opcode, int r1, int r2, int r3, int shamt) {
-    return (opcode << 28) | (r1 << 23) | (r2 << 18) | (r3 << 13) | (shamt & 0x1FFF);
-}
+        instruction_decode(if_id_register, &id_ex_register);
+        execute(id_ex_register, &ex_mem_register, &pc);
+        write_back(mem_wb_register);
 
+        printf("Cycle %d:\n", cycle);
+        printf("  PC: %u, IF_ID: 0x%08X, ID_EX: 0x%08X, EX_MEM: 0x%08X, MEM_WB: 0x%08X\n",
+               pc, if_id_register, id_ex_register, ex_mem_register, mem_wb_register);
 
-uint32_t encode_i_type(int opcode, int r1, int r2, int32_t imm) {
-    return (opcode << 28) | (r1 << 23) | (r2 << 18) | (imm & 0x3FFFF);
-}
-
-
-uint32_t encode_j_type(int opcode, int address) {
-    return (opcode << 28) | (address & 0x0FFFFFFF);
-}
-
-
-void print_binary(uint32_t value) {
-    for (int i = 31; i >= 0; i--) {
-        printf("%d", (value >> i) & 1);
+        cycle++;
     }
 }
 
+uint32_t instruction_fetch(uint32_t instruction_memory[], uint32_t *pc, int num_instructions) {
+    if (*pc >= num_instructions) {
+        printf("PC out of bounds: %u\n", *pc);
+        return 0;
+    }
 
-uint32_t parse_instruction(const char *line) {
-    char instr[10], op1[10], op2[10], op3[10];
-    int opcode = -1;
-    sscanf(line, "%s %s %s %s", instr, op1, op2, op3);
+    uint32_t instr = instruction_memory[*pc];
+    printf("Fetched instruction %d: 0x%08X\n", *pc, instr);
+    (*pc)++;
+    return instr;
+}
 
-    for (int i = 0; instr[i]; i++) instr[i] = toupper(instr[i]);
-    //R
-    if (strcmp(instr, "ADD") == 0) opcode = 0;
-    else if (strcmp(instr, "SUB") == 0) opcode = 1;
-    else if (strcmp(instr, "AND") == 0) opcode = 2;
-    else if (strcmp(instr, "OR")  == 0) opcode = 3;
-    else if (strcmp(instr, "LSL") == 0) opcode = 4;
-    else if (strcmp(instr, "LSR") == 0) opcode = 5;
-    //I
-    else if (strcmp(instr, "MOVI") == 0) opcode = 6;
-    else if (strcmp(instr, "JEQ")  == 0) opcode = 7;
-    else if (strcmp(instr, "NOP")    == 0) opcode = 8;
-    else if (strcmp(instr, "LW")   == 0) opcode = 9;
-    else if (strcmp(instr, "SW")   == 0) opcode = 10;
-    //J
-    else if (strcmp(instr, "J")  == 0) opcode = 11;
-    else {
-        fprintf(stderr, "Unknown instruction: %s\n", instr);
+void instruction_decode(uint32_t if_id_register, uint32_t *id_ex_register) {
+    uint32_t opcode = (if_id_register >> 28) & 0xF;
+
+    if (opcode <= 5) { // R-type
+        struct instruction_R r = {
+            .opcode = opcode,
+            .r1 = (if_id_register >> 23) & 0x1F,
+            .r2 = (if_id_register >> 18) & 0x1F,
+            .r3 = (if_id_register >> 13) & 0x1F,
+            .shamt = if_id_register & 0x1FFF
+        };
+        printf("Decoded R-type: opcode=%u, r1=%u, r2=%u, r3=%u, shamt=%u\n",
+               r.opcode, r.r1, r.r2, r.r3, r.shamt);
+    } else if (opcode >= 6 && opcode <= 10) { // I-type
+        struct instruction_I i = {
+            .opcode = opcode,
+            .r1 = (if_id_register >> 23) & 0x1F,
+            .r2 = (if_id_register >> 18) & 0x1F,
+            .imm = if_id_register & 0x3FFFF
+        };
+        printf("Decoded I-type: opcode=%u, r1=%u, r2=%u, imm=%u\n",
+               i.opcode, i.r1, i.r2, i.imm);
+    } else if (opcode == 11) { // J-type
+        struct instruction_J j = {
+            .opcode = opcode,
+            .address = if_id_register & 0xFFFFFFF
+        };
+        printf("Decoded J-type: opcode=%u, address=%u\n",
+               j.opcode, j.address);
+    } else {
+        fprintf(stderr, "Invalid opcode: %u\n", opcode);
         exit(EXIT_FAILURE);
     }
 
+    *id_ex_register = if_id_register; // Pass to next stage
+}
+
+void execute(uint32_t id_ex_register, uint32_t *ex_mem_register, uint32_t *pc) {
+    uint32_t opcode = (id_ex_register >> 28) & 0xF;
+    uint32_t r1 = (id_ex_register >> 23) & 0x1F;
+    uint32_t r2 = (id_ex_register >> 18) & 0x1F;
+    uint32_t r3 = (id_ex_register >> 13) & 0x1F;
+    uint32_t shamt = id_ex_register & 0x1FFF;
+    uint32_t imm = id_ex_register & 0x3FFFF;
+
     switch (opcode) {
-        case 0: case 1: case 2: case 3:
-            return encode_r_type(opcode, reg_to_int(op1), reg_to_int(op2), reg_to_int(op3), 0);
-        case 4: case 5:
-            return encode_r_type(opcode, reg_to_int(op1), reg_to_int(op2), 0, atoi(op3));
-        case 6:
-            return encode_i_type(opcode, reg_to_int(op1), 0, parse_immediate(op2));
-        case 7:
-            return encode_i_type(opcode, reg_to_int(op1), reg_to_int(op2), parse_immediate(op3));
-        case 8:
-            return encode_j_type(opcode, parse_immediate(op1));
-        case 9: case 10:
-            return encode_i_type(opcode, reg_to_int(op1), reg_to_int(op2), parse_immediate(op3));
-        case 11:
-            return 0x00000000;
+        case 0: registers[r1] = registers[r2] + registers[r3]; break;
+        case 1: registers[r1] = registers[r2] - registers[r3]; break;
+        case 2: registers[r1] = registers[r2] & registers[r3]; break;
+        case 3: registers[r1] = registers[r2] | registers[r3]; break;
+        case 4: registers[r1] = registers[r2] << shamt; break;
+        case 5: registers[r1] = registers[r2] >> shamt; break;
+        case 6: registers[r1] = imm; break;
+        case 7: if (registers[r1] == registers[r2]) *pc += imm - 1; break;
+        case 8: *pc = imm; break;
+        case 9: registers[r1] = read_memory(registers[r2] + imm); break;
+        case 10: write_memory(registers[r2] + imm, registers[r1]); break;
+        case 11: break; // NOP
         default:
-            fprintf(stderr, "Invalid opcode: %d\n", opcode);
+            fprintf(stderr, "Invalid opcode in execute: %u\n", opcode);
             exit(EXIT_FAILURE);
     }
+
+    *ex_mem_register = id_ex_register;
 }
 
-int main() {
-    init_registers(); 
-    init_memory(); // btsahel 3alaya 7etet el write fel memory file
-
-    
-    FILE *file = fopen(FILENAME, "r");
-    if (!file) {
-        perror("Error opening file");
-        return EXIT_FAILURE;
-    }
-
-    char buffer[256];
-    int instruction_index = 0;
-
-    printf("Reading file: %s\n\n", FILENAME);
-
-    while (fgets(buffer, sizeof(buffer), file)) {
-        char *line = trim_whitespace(buffer);
-        if (strlen(line) == 0) continue;
-
-        uint32_t encoded = parse_instruction(line);
-        instruction_memory[instruction_index++] = encoded;
-
-        printf("Instruction %d encoded as: ", instruction_index);
-        print_binary(encoded);
-        printf("\n");
-    }
-
-    fclose(file);
-
-    write_instruction_memory(instruction_memory);
-
-
-     print_memory();
-
-    return EXIT_SUCCESS;
+void memory_access(uint32_t ex_mem_register, uint32_t *mem_wb_register) {
+    // Placeholder: In actual design, you'd extract and process LW/SW again here.
+    *mem_wb_register = ex_mem_register;
 }
-    
+
+void write_back(uint32_t mem_wb_register) {
+    uint32_t opcode = (mem_wb_register >> 28) & 0xF;
+    uint32_t r1 = (mem_wb_register >> 23) & 0x1F;
+
+    if (opcode != 11 && opcode != 7 && opcode != 8 && opcode != 10) {
+        // write_register(r1, result); // Replace with actual logic if needed
+        printf("Write back: Register %u = %u\n", r1, registers[r1]);
+    }
+}
