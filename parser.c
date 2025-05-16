@@ -5,7 +5,7 @@
 #include <ctype.h>
 #include "memory.h"
 #include "pipeline.h"
-#include "registers.h" // Include registers.h
+//#include "registers.h" // Include registers.h
 
 #define FILENAME "program.txt"
 #define MAX_INSTRUCTIONS 1024
@@ -111,8 +111,8 @@ uint32_t encode_instruction(const char *line) {
         case 5:
         case 12:
             return encode_r_type(opcode, reg_to_int(op1), reg_to_int(op2), reg_to_int(op3), 0);
-        case 4:
-        case 5:
+        //case 4:
+        //case 5:
             return encode_r_type(opcode, reg_to_int(op1), reg_to_int(op2), 0, atoi(op3));
         case 6:
         case 7:

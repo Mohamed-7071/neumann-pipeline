@@ -1,8 +1,11 @@
 #include "pipeline.h"
 #include "memory.h" // Include the memory.h header
+#include "registers.h" // Include the registers.h header
 #include <stdio.h>
 #include <stdlib.h> // Include for exit()
 #include <stdint.h>
+
+
 
 
 int cycle = 1;
@@ -255,5 +258,5 @@ void write_back(uint32_t mem_wb_register, int cycle) {
             printf("  Write Back: No write back for this instruction.\n");
             break;
     }
-    Cycle++;
+    cycle++;
 }
