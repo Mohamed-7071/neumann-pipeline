@@ -1,12 +1,16 @@
 #include "pipeline.h"
 #include "memory.h" // Include the memory.h header
+#include "registers.h" // Include the registers.h header
 #include <stdio.h>
 #include <stdlib.h> // Include for exit()
 #include <stdint.h>
 
 
+
+
+
 int cycle = 1;
-void instruction_fetch(uint32_t instruction_memory[], uint32_t *pc, uint32_t *if_id_register, int cycle);
+uint32_t instruction_fetch(uint32_t instruction_memory[], uint32_t *pc, uint32_t *if_id_register, int cycle);
 void instruction_decode(uint32_t if_id_register, uint32_t *id_ex_register, int cycle);
 void execute(uint32_t id_ex_register, uint32_t *ex_mem_register, int cycle);
 void memory_access(uint32_t ex_mem_register, uint32_t *mem_wb_register, int cycle);
@@ -119,7 +123,13 @@ void instruction_decode(uint32_t if_id_register, uint32_t *id_ex_register, int c
 }
 
 void execute(uint32_t id_ex_register, uint32_t *ex_mem_register, int cycle) {
-
+    // Extract fields from the instruction
+    uint32_t opcode = (id_ex_register >> 28) & 0xF;
+    uint32_t r1 = (id_ex_register >> 23) & 0x1F;
+    uint32_t r2 = (id_ex_register >> 18) & 0x1F;
+    uint32_t r3 = (id_ex_register >> 13) & 0x1F;
+    uint32_t shamt = id_ex_register & 0x1FFF;
+    uint32_t imm = id_ex_register & 0x3FFFF;
 
     switch (opcode) {
         case 0: // ADD
@@ -146,12 +156,12 @@ void execute(uint32_t id_ex_register, uint32_t *ex_mem_register, int cycle) {
         case 7: // JEQ
             if (registers[r1] == registers[r2]) {
                 extern uint32_t pc;
-                pc = pc + imm - 1; // Adjust PC for jump
+                pc = pc + imm - 1;
             }
             break;
         case 8: // JMP
             extern uint32_t pc;
-            pc = imm; // Set PC to the jump address
+            pc = imm;
             break;
         case 9: // LW
             registers[r1] = read_memory(registers[r2] + imm);
@@ -255,5 +265,5 @@ void write_back(uint32_t mem_wb_register, int cycle) {
             printf("  Write Back: No write back for this instruction.\n");
             break;
     }
-    Cycle++;
+    cycle++;
 }
