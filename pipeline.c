@@ -5,182 +5,220 @@
 #include <stdlib.h> // Include for exit()
 #include <stdint.h>
 
+#define MAX_PIPELINE_DEPTH 5
+#define MAX_INSTRUCTIONS 100
 
+typedef enum { STAGE_NONE, STAGE_IF, STAGE_ID, STAGE_EX, STAGE_MEM, STAGE_WB, STAGE_DONE } Stage;
 
-
+typedef struct {
+    Instruction inst;
+    Stage stage;
+    int stage_cycles_left;
+    int active; // 1 if this slot is occupied by an instruction
+} PipelineSlot;
 
 int cycle = 1;
 uint32_t instruction_fetch(uint32_t instruction_memory[], uint32_t *pc, uint32_t *if_id_register, int cycle);
-void instruction_decode(uint32_t if_id_register, uint32_t *id_ex_register, int cycle);
-void execute(uint32_t id_ex_register, uint32_t *ex_mem_register, int cycle);
+void instruction_decode(uint32_t if_id_register, Instruction *id_ex, int cycle);
+void execute(Instruction *id_ex, uint32_t *ex_mem_register, int cycle);
 void memory_access(uint32_t ex_mem_register, uint32_t *mem_wb_register, int cycle);
 void write_back(uint32_t mem_wb_register, int cycle);
 
 
-struct instruction_R{
-    uint32_t opcode:4;
-    uint32_t r1:5;
-    uint32_t r2:5;
-    uint32_t r3:5;
-    uint32_t shamt:13;
-};
+// Instruction Structure
+typedef struct {
+    uint32_t binary; // 32-bit instruction
+    int opcode;
+    int r1, r2, r3, shamt; // R-format fields
+    int imm; // I-format immediate
+    int addr; // J-format address
+    int pc; // PC at fetch time (for branches)
+    int valid; // Flag to indicate valid instruction
+} Instruction;
 
-struct instruction_I{
-    uint32_t opcode:4;
-    uint32_t r1:5;
-    uint32_t r2:5;
-    uint32_t imm:18;
-};
+// Pipeline Stage Structure
+typedef struct {
+    Instruction inst;
+    int stage_cycle; // Tracks cycles spent in stage (for ID, EX)
+} PipelineStage;
 
-struct instruction_J{
-    uint32_t opcode:4;
-    uint32_t address:28;
-};
 
 void run_pipeline(uint32_t instruction_memory[], int num_instructions) {
-    uint32_t pc = 0; // Program Counter
-    uint32_t if_id_register = 0;
-    uint32_t id_ex_register = 0;
-    uint32_t ex_mem_register = 0;
-    uint32_t mem_wb_register = 0;
-      // Clock cycle counter
+    PipelineSlot pipeline[MAX_INSTRUCTIONS] = {0};
+    int instructions_in_pipeline = 0;
+    int next_fetch = 0;
+    int completed = 0;
+    int cycle = 1;
 
-
-    // Loop through the instructions, simulating the pipeline stages
-    while (pc < num_instructions || if_id_register != 0 || id_ex_register != 0 || ex_mem_register != 0 || mem_wb_register != 0) {
-        // Simulate the pipeline stages.  Handle the fact that IF and MEM
-        // cannot occur in the same cycle.
-        if (cycle % 2 != 0) {
-            instruction_fetch(instruction_memory, &pc, &if_id_register, cycle);
+    while (completed < num_instructions) {
+        // 1. Advance WB stage (finish instructions)
+        for (int i = 0; i < num_instructions; ++i) {
+            if (pipeline[i].active && pipeline[i].stage == STAGE_WB && pipeline[i].stage_cycles_left == 0) {
+                write_back(pipeline[i].inst.binary, cycle);
+                pipeline[i].stage = STAGE_DONE;
+                pipeline[i].active = 0;
+                completed++;
+            }
         }
-        else{
-            memory_access(ex_mem_register, &mem_wb_register, cycle);
-        }
-        instruction_decode(if_id_register, &id_ex_register, cycle);
-        execute(id_ex_register, &ex_mem_register, cycle);
-        write_back(mem_wb_register, cycle);
 
+        // 2. Advance MEM stage
+        int mem_busy = 0;
+        for (int i = 0; i < num_instructions; ++i) {
+            if (pipeline[i].active && pipeline[i].stage == STAGE_MEM) {
+                if (pipeline[i].stage_cycles_left == 0) {
+                    mem_busy = 1;
+                    memory_access(pipeline[i].inst.binary, &pipeline[i].inst.binary, cycle);
+                    pipeline[i].stage = STAGE_WB;
+                    pipeline[i].stage_cycles_left = 1;
+                } else {
+                    pipeline[i].stage_cycles_left--;
+                }
+            }
+        }
+
+        // 3. Advance EX stage
+        for (int i = 0; i < num_instructions; ++i) {
+            if (pipeline[i].active && pipeline[i].stage == STAGE_EX) {
+                if (pipeline[i].stage_cycles_left == 0) {
+                    execute(&pipeline[i].inst, &pipeline[i].inst.binary, cycle);
+                    pipeline[i].stage = STAGE_MEM;
+                    pipeline[i].stage_cycles_left = 1;
+                } else {
+                    pipeline[i].stage_cycles_left--;
+                }
+            }
+        }
+
+        // 4. Advance ID stage
+        for (int i = 0; i < num_instructions; ++i) {
+            if (pipeline[i].active && pipeline[i].stage == STAGE_ID) {
+                if (pipeline[i].stage_cycles_left == 0) {
+                    instruction_decode(pipeline[i].inst.binary, &pipeline[i].inst, cycle);
+                    pipeline[i].stage = STAGE_EX;
+                    pipeline[i].stage_cycles_left = 2;
+                } else {
+                    pipeline[i].stage_cycles_left--;
+                }
+            }
+        }
+
+        // 5. Fetch new instruction if allowed (every 2 cycles, and only if MEM is not running)
+        if ((cycle % 2 == 1) && !mem_busy && next_fetch < num_instructions) {
+            pipeline[next_fetch].inst.binary = instruction_fetch(instruction_memory, &next_fetch, &pipeline[next_fetch].inst.binary, cycle);
+            pipeline[next_fetch].stage = STAGE_ID;
+            pipeline[next_fetch].stage_cycles_left = 2;
+            pipeline[next_fetch].active = 1;
+            instructions_in_pipeline++;
+        }
+
+        // Print pipeline state for debugging
         printf("Cycle %d:\n", cycle);
-        printf("  PC: %u, IF_ID: 0x%08X, ID_EX: 0x%08X, EX_MEM: 0x%08X, MEM_WB: 0x%08X\n", pc, if_id_register, id_ex_register, ex_mem_register, mem_wb_register);
-
+        for (int i = 0; i < num_instructions; ++i) {
+            if (pipeline[i].active) {
+                printf("  Instruction %d in stage %d (cycles left: %d)\n", i+1, pipeline[i].stage, pipeline[i].stage_cycles_left);
+            }
+        }
         cycle++;
     }
 }
 
-
-
-
- uint32_t instruction_fetch(uint32_t instruction_memory[], uint32_t *pc, uint32_t *if_id_register, int cycle) {
-    if (*pc < sizeof(instruction_memory) / sizeof(instruction_memory[0]))
-    {
-     print("the address is %d not accessible", *pc);
-     return -1;
-    }
-    else
+uint32_t instruction_fetch(uint32_t instruction_memory[], uint32_t *pc, uint32_t *if_id_register, int cycle) {
+    if (*pc < sizeof(instruction_memory) / sizeof(instruction_memory[0])) {
+        print("the address is %d not accessible", *pc);
+        return -1;
+    } else {
         printf("instruction %d fetched: 0x%08X\n", *pc, instruction_memory[*pc]);
+    }
     cycle++;
-       return instruction_memory[(*pc)++];
+    return instruction_memory[(*pc)++];
 }
 
-void instruction_decode(uint32_t if_id_register, uint32_t *id_ex_register, int cycle) {
-    uint32_t opcode = (if_id_register >> 28) & 0xF; // Extract opcode (bits 31-28)
+void instruction_decode(uint32_t if_id_register, Instruction *id_ex, int cycle) {
+    id_ex->binary = if_id_register;
+    id_ex->opcode = (if_id_register >> 28) & 0xF;
+    id_ex->pc = 0; // Set if you track PC elsewhere
+    id_ex->valid = 1;
 
-    // Decode based on the opcode
-    if (opcode <= 5) { // R-type instruction
-        struct instruction_R decoded_R;
-        decoded_R.opcode = opcode;
-        decoded_R.r1 = (if_id_register >> 23) & 0x1F; // Extract r1 (bits 27-23)
-        decoded_R.r2 = (if_id_register >> 18) & 0x1F; // Extract r2 (bits 22-18)
-        decoded_R.r3 = (if_id_register >> 13) & 0x1F; // Extract r3 (bits 17-13)
-        decoded_R.shamt = if_id_register & 0x1FFF;    // Extract shift amount (bits 12-0)
-
+    if (id_ex->opcode <= 5) { // R-type
+        id_ex->r1 = (if_id_register >> 23) & 0x1F;
+        id_ex->r2 = (if_id_register >> 18) & 0x1F;
+        id_ex->r3 = (if_id_register >> 13) & 0x1F;
+        id_ex->shamt = if_id_register & 0x1FFF;
+        id_ex->imm = 0;
+        id_ex->addr = 0;
         printf("Decoded R-type: opcode=%u, r1=%u, r2=%u, r3=%u, shamt=%u\n",
-               decoded_R.opcode, decoded_R.r1, decoded_R.r2, decoded_R.r3, decoded_R.shamt);
-    } else if (opcode >= 6 && opcode <= 10) { // I-type instruction
-        struct instruction_I decoded_I;
-        decoded_I.opcode = opcode;
-        decoded_I.r1 = (if_id_register >> 23) & 0x1F; // Extract r1 (bits 27-23)
-        decoded_I.r2 = (if_id_register >> 18) & 0x1F; // Extract r2 (bits 22-18)
-        decoded_I.imm = if_id_register & 0x3FFFF;     // Extract immediate (bits 17-0)
-
+               id_ex->opcode, id_ex->r1, id_ex->r2, id_ex->r3, id_ex->shamt);
+    } else if (id_ex->opcode >= 6 && id_ex->opcode <= 10) { // I-type
+        id_ex->r1 = (if_id_register >> 23) & 0x1F;
+        id_ex->r2 = (if_id_register >> 18) & 0x1F;
+        id_ex->imm = if_id_register & 0x3FFFF;
+        id_ex->r3 = 0;
+        id_ex->shamt = 0;
+        id_ex->addr = 0;
         printf("Decoded I-type: opcode=%u, r1=%u, r2=%u, imm=%u\n",
-               decoded_I.opcode, decoded_I.r1, decoded_I.r2, decoded_I.imm);
-    } else if (opcode == 11) { // J-type instruction
-        struct instruction_J decoded_J;
-        decoded_J.opcode = opcode;
-        decoded_J.address = if_id_register & 0xFFFFFFF; // Extract address (bits 27-0)
-
+               id_ex->opcode, id_ex->r1, id_ex->r2, id_ex->imm);
+    } else if (id_ex->opcode == 11) { // J-type
+        id_ex->addr = if_id_register & 0xFFFFFFF;
+        id_ex->r1 = id_ex->r2 = id_ex->r3 = id_ex->shamt = id_ex->imm = 0;
         printf("Decoded J-type: opcode=%u, address=%u\n",
-               decoded_J.opcode, decoded_J.address);
+               id_ex->opcode, id_ex->addr);
     } else {
-        fprintf(stderr, "Invalid opcode: %u\n", opcode);
+        id_ex->valid = 0;
+        fprintf(stderr, "Invalid opcode: %u\n", id_ex->opcode);
         exit(EXIT_FAILURE);
     }
-
-    // Pass the instruction to the next pipeline stage
-    *id_ex_register = if_id_register;
     cycle++;
 }
 
-void execute(uint32_t id_ex_register, uint32_t *ex_mem_register, int cycle) {
-    // Extract fields from the instruction
-    uint32_t opcode = (id_ex_register >> 28) & 0xF;
-    uint32_t r1 = (id_ex_register >> 23) & 0x1F;
-    uint32_t r2 = (id_ex_register >> 18) & 0x1F;
-    uint32_t r3 = (id_ex_register >> 13) & 0x1F;
-    uint32_t shamt = id_ex_register & 0x1FFF;
-    uint32_t imm = id_ex_register & 0x3FFFF;
-
-    switch (opcode) {
+void execute(Instruction *id_ex, uint32_t *ex_mem_register, int cycle) {
+    switch (id_ex->opcode) {
         case 0: // ADD
-            registers[r1] = registers[r2] + registers[r3];
+            registers[id_ex->r1] = registers[id_ex->r2] + registers[id_ex->r3];
             break;
         case 1: // SUB
-            registers[r1] = registers[r2] - registers[r3];
+            registers[id_ex->r1] = registers[id_ex->r2] - registers[id_ex->r3];
             break;
         case 2: // AND
-            registers[r1] = registers[r2] & registers[r3];
+            registers[id_ex->r1] = registers[id_ex->r2] & registers[id_ex->r3];
             break;
         case 3: // OR
-            registers[r1] = registers[r2] | registers[r3];
+            registers[id_ex->r1] = registers[id_ex->r2] | registers[id_ex->r3];
             break;
         case 4: // LSL
-            registers[r1] = registers[r2] << shamt;
+            registers[id_ex->r1] = registers[id_ex->r2] << id_ex->shamt;
             break;
         case 5: // LSR
-            registers[r1] = registers[r2] >> shamt;
+            registers[id_ex->r1] = registers[id_ex->r2] >> id_ex->shamt;
             break;
         case 6: // MOVI
-            registers[r1] = imm;
+            registers[id_ex->r1] = id_ex->imm;
             break;
         case 7: // JEQ
-            if (registers[r1] == registers[r2]) {
+            if (registers[id_ex->r1] == registers[id_ex->r2]) {
                 extern uint32_t pc;
-                pc = pc + imm - 1;
+                pc = pc + id_ex->imm - 1;
             }
             break;
         case 8: // JMP
             extern uint32_t pc;
-            pc = imm;
+            pc = id_ex->addr;
             break;
         case 9: // LW
-            registers[r1] = read_memory(registers[r2] + imm);
+            registers[id_ex->r1] = read_memory(registers[id_ex->r2] + id_ex->imm);
             break;
         case 10: // SW
-            write_memory(registers[r2] + imm, registers[r1]);
+            write_memory(registers[id_ex->r2] + id_ex->imm, registers[id_ex->r1]);
             break;
         case 11: // NOP
             // No operation
             break;
         default:
-            fprintf(stderr, "Invalid opcode: %u\n", opcode);
+            fprintf(stderr, "Invalid opcode: %u\n", id_ex->opcode);
             exit(EXIT_FAILURE);
     }
-
-    *ex_mem_register = id_ex_register;
+    *ex_mem_register = id_ex->binary; // or pass the struct if you want
     cycle++;
 }
-
 
 void memory_access(uint32_t ex_mem_register, uint32_t *mem_wb_register, int cycle) {
     uint32_t opcode = (ex_mem_register >> 28) & 0xF; // Extract opcode
@@ -229,7 +267,6 @@ void memory_access(uint32_t ex_mem_register, uint32_t *mem_wb_register, int cycl
     }
     cycle++;
 }
-
 
 void write_back(uint32_t mem_wb_register, int cycle) {
     uint32_t opcode = (mem_wb_register >> 28) & 0xF;
