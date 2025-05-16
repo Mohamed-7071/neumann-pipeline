@@ -64,16 +64,8 @@ void run_pipeline(uint32_t instruction_memory[], int num_instructions) {
 }
 
 
-// IF (odd cycles only, and not flushing)
-if (cycle % 2 == 1 && instructions_fetched < num_instructions && pipeline[0].valid == 0 && !flush_pipeline) {
-    pipeline[0].valid = 1;
-    pipeline[0].instr = read_memory(PC); // Use memory.c's read_memory
-    pipeline[0].pc_at_fetch = PC;
-    pipeline[0].id_cycles = 2;
-    PC++;
-    instructions_fetched++;
-}
-// Implement the pipeline stage functions
+
+
  uint32_t instruction_fetch(uint32_t instruction_memory[], uint32_t *pc, uint32_t *if_id_register, int cycle) {
     if (*pc < sizeof(instruction_memory) / sizeof(instruction_memory[0]))
     {
@@ -82,6 +74,7 @@ if (cycle % 2 == 1 && instructions_fetched < num_instructions && pipeline[0].val
     }
     else
         printf("instruction %d fetched: 0x%08X\n", *pc, instruction_memory[*pc]);
+    cycle++;
        return instruction_memory[(*pc)++];
 }
 
@@ -122,6 +115,7 @@ void instruction_decode(uint32_t if_id_register, uint32_t *id_ex_register, int c
 
     // Pass the instruction to the next pipeline stage
     *id_ex_register = if_id_register;
+    cycle++;
 }
 
 void execute(uint32_t id_ex_register, uint32_t *ex_mem_register, int cycle) {
@@ -174,20 +168,92 @@ void execute(uint32_t id_ex_register, uint32_t *ex_mem_register, int cycle) {
     }
 
     *ex_mem_register = id_ex_register;
+    cycle++;
 }
 
+
 void memory_access(uint32_t ex_mem_register, uint32_t *mem_wb_register, int cycle) {
- 
+    uint32_t opcode = (ex_mem_register >> 28) & 0xF; // Extract opcode
+    uint32_t r1, r2, imm, address;
+
+    printf("Cycle %d: Memory Access Stage\n", cycle);
+
+    switch (opcode) {
+        case 9: // MOVR R1 R2 IMM
+            r1 = (ex_mem_register >> 23) & 0x1F;
+            r2 = (ex_mem_register >> 18) & 0x1F;
+            imm = ex_mem_register & 0x3FFFF;
+            uint32_t mem_addr_r = get_register(r2) + imm; // Calculate memory address
+            if(mem_addr_r >= MEMORY_SIZE){
+                fprintf(stderr, "Memory Access Violation: MOVR, address 0x%08X\n", mem_addr_r);
+                exit(EXIT_FAILURE);
+            }
+            uint32_t read_data = read_memory(mem_addr_r); // Read from memory
+            printf("  MOVR R%u, R%u, %d: Read 0x%08X from memory address 0x%08X\n", r1, r2, imm, read_data, mem_addr_r);
+            // Pass data to the next stage.  Critical to pass the *data* read, not the address.
+            *mem_wb_register = (opcode << 28) | (r1 << 23) | (read_data & 0x7FFFFFF); //store read data in the lower 27 bits
+            break;
+
+        case 10: // MOVM R1 R2 IMM
+            r1 = (ex_mem_register >> 23) & 0x1F;
+            r2 = (ex_mem_register >> 18) & 0x1F;
+            imm = ex_mem_register & 0x3FFFF;
+            uint32_t mem_addr_w = get_register(r2) + imm; // Calculate memory address
+             if(mem_addr_w >= MEMORY_SIZE){
+                fprintf(stderr, "Memory Access Violation: MOVM, address 0x%08X\n", mem_addr_w);
+                exit(EXIT_FAILURE);
+            }
+            uint32_t write_data = get_register(r1);
+            write_memory(mem_addr_w, write_data);         // Write to memory
+            printf("  MOVM R%u, R%u, %d: Wrote 0x%08X to memory address 0x%08X\n", r1, r2, imm, write_data, mem_addr_w);
+            // Pass the original instruction (with the value of R1) to the next stage for WB.
+            *mem_wb_register = ex_mem_register;
+            break;
+
+        default:
+            // For other instructions, no memory access is performed in this stage.
+            // Just pass the data from the previous stage to the next.
+            *mem_wb_register = ex_mem_register;
+            printf("  No memory access for this instruction.\n");
+            break;
+    }
+    cycle++;
 }
+
 
 void write_back(uint32_t mem_wb_register, int cycle) {
     uint32_t opcode = (mem_wb_register >> 28) & 0xF;
-    uint32_t r1 = (mem_wb_register >> 23) & 0x1F;
+    uint32_t r1, result;
 
-    // Write the result to the register file
-    //  Make sure it is not NOP instruction
-    if (opcode != 11 && opcode != 7 && opcode != 8 && opcode != 10)
-    {
-       // write_register(r1, result);  // Use the write_register function from memory.c
+    printf("Cycle %d: Write Back Stage\n", cycle);
+
+    switch (opcode) {
+        case 0:
+        case 1:
+        case 2:
+        case 3:
+        case 4:
+        case 5:
+        case 6:
+        case 8:
+        case 9:
+            r1 = (mem_wb_register >> 23) & 0x1F;
+            result = mem_wb_register & 0x7FFFFFF;
+            set_register(r1, result);
+            printf("  Write Back: R%u = 0x%08X\n", r1, result);
+            break;
+
+        case 10:
+            printf("  Write Back: No write back for MOVM.\n");
+            break;
+
+        case 7:
+        case 11:
+            printf("  Write Back: No write back for JEQ or JMP.\n");
+            break;
+        default:
+            printf("  Write Back: No write back for this instruction.\n");
+            break;
     }
+    Cycle++;
 }
