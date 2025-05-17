@@ -53,47 +53,32 @@ void print_binary(uint32_t value) {
     }
 }
 
-
 uint32_t parse_instruction(const char *line) {
     char instr[10], op1[10], op2[10], op3[10];
     int opcode = -1;
-    sscanf(line, "%s %s %s %s", instr, op1, op2, op3);
 
-    for (int i = 0; instr[i]; i++)
-        instr[i] = toupper(instr[i]);
-    // R
-    if (strcmp(instr, "ADD") == 0)
-        opcode = 0;
-    else if (strcmp(instr, "SUB") == 0)
-        opcode = 1;
-    else if (strcmp(instr, "MUL") == 0)
-        opcode = 2;
-    else if (strcmp(instr, "AND") == 0)
-        opcode = 3;
-    else if (strcmp(instr, "LSL") == 0)
-        opcode = 4;
-    else if (strcmp(instr, "LSR") == 0)
-        opcode = 5;
-    // I
-    else if (strcmp(instr, "MOVI") == 0)
-        opcode = 6;
-    else if (strcmp(instr, "JEQ") == 0)
-        opcode = 7;
-    else if (strcmp(instr, "XORI") == 0)
-        opcode = 8;
-    else if (strcmp(instr, "MOVR") == 0)
-        opcode = 9;
-    else if (strcmp(instr, "MOVM") == 0)
-        opcode = 10;
-    // J
-    else if (strcmp(instr, "JMP") == 0)
-        opcode = 11;
-    else
-    {
+    sscanf(line, "%s %s %s %s", instr, op1, op2, op3);
+    for (int i = 0; instr[i]; i++) instr[i] = toupper(instr[i]);
+
+    // Opcode lookup
+    if      (strcmp(instr, "ADD")  == 0) opcode = 0;
+    else if (strcmp(instr, "SUB")  == 0) opcode = 1;
+    else if (strcmp(instr, "MUL")  == 0) opcode = 2;
+    else if (strcmp(instr, "AND")  == 0) opcode = 3;
+    else if (strcmp(instr, "LSL")  == 0) opcode = 4;
+    else if (strcmp(instr, "LSR")  == 0) opcode = 5;
+    else if (strcmp(instr, "MOVI") == 0) opcode = 6;
+    else if (strcmp(instr, "JEQ")  == 0) opcode = 7;
+    else if (strcmp(instr, "XORI") == 0) opcode = 8;
+    else if (strcmp(instr, "MOVR") == 0) opcode = 9;
+    else if (strcmp(instr, "MOVM") == 0) opcode = 10;
+    else if (strcmp(instr, "JMP")  == 0) opcode = 11;
+    else {
         fprintf(stderr, "Unknown instruction: %s\n", instr);
         exit(EXIT_FAILURE);
     }
 
+    // Encode instruction based on type
     switch (opcode) {
         case 0: case 1: case 2: case 3:
             return encode_r_type(opcode, reg_to_int(op1), reg_to_int(op2), reg_to_int(op3), 0);
@@ -104,17 +89,16 @@ uint32_t parse_instruction(const char *line) {
         case 7:
             return encode_i_type(opcode, reg_to_int(op1), reg_to_int(op2), parse_immediate(op3));
         case 8:
-            return encode_j_type(opcode, parse_immediate(op1));
+            return encode_i_type(opcode, reg_to_int(op1), 0, parse_immediate(op2));
         case 9: case 10:
             return encode_i_type(opcode, reg_to_int(op1), reg_to_int(op2), parse_immediate(op3));
         case 11:
-            return 0x00000000;
+            return encode_j_type(opcode, parse_immediate(op1));
         default:
             fprintf(stderr, "Invalid opcode: %d\n", opcode);
             exit(EXIT_FAILURE);
     }
 }
-
 int main() {
     init_memory(); // btsahel 3alaya 7etet el write fel memory file
 

@@ -1,3 +1,5 @@
+// memory.c
+
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -5,8 +7,7 @@
 #define MEMORY_SIZE 2048
 #define INSTRUCTION_SEGMENT_LIMIT 1024
 
-// Unified instruction + data memory
-uint32_t memory[MEMORY_SIZE];
+uint32_t memory[MEMORY_SIZE]; // Unified instruction + data memory
 
 // === Initialize memory to 0 ===
 void init_memory() {
@@ -26,7 +27,7 @@ void write_instruction_memory(uint32_t *instruction_array) {
 }
 
 // === Read memory from any address ===
-uint32_t read_memory(uint16_t address) {
+uint32_t read_memory(uint32_t address) {
     if (address >= MEMORY_SIZE) {
         fprintf(stderr, "Memory Read Error: address %d out of bounds.\n", address);
         exit(EXIT_FAILURE);
@@ -34,19 +35,21 @@ uint32_t read_memory(uint16_t address) {
     return memory[address];
 }
 
-// === Write memory to any address ===
-void write_memory(uint16_t address, uint32_t value) {
-    if (address >= MEMORY_SIZE) {
-        fprintf(stderr, "Memory Write Error: address %d out of bounds.\n", address);
-        exit(EXIT_FAILURE);
-    }
-    memory[address] = value;
-}
-
-// === Print full memory content ===
 void print_memory() {
     printf("\n======= Full Memory Dump =======\n");
     for (int i = 0; i < MEMORY_SIZE; i++) {
-        printf("Memory[%4d] = 0x%08X\n", i, memory[i]);
+        uint32_t value = memory[i];
+        printf("Memory[%4d] = 0b ", i);
+        
+        // Print each bit, starting from MSB (Most Significant Bit)
+        for (int bit = 31; bit >= 0; bit--) {
+            printf("%d", (value >> bit) & 1);
+            
+            // Add a space every 4 bits for readability
+            if (bit % 4 == 0 && bit > 0) {
+                printf(" ");
+            }
+        }
+        printf("\n");
     }
 }

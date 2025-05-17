@@ -26,15 +26,7 @@ void write_back(uint32_t mem_wb_register, int cycle);
 
 
 // Instruction Structure
-typedef struct {
-    uint32_t binary; // 32-bit instruction
-    int opcode;
-    int r1, r2, r3, shamt; // R-format fields
-    int imm; // I-format immediate
-    int addr; // J-format address
-    int pc; // PC at fetch time (for branches)
-    int valid; // Flag to indicate valid instruction
-} Instruction;
+
 
 // Pipeline Stage Structure
 typedef struct {
