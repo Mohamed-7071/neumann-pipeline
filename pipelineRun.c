@@ -24,17 +24,104 @@ typedef struct {
     int cycles_remaining;
     bool active;
     uint32_t result; // Separate field for execution result
+    uint32_t instruction_address; // <-- Add this field to track instruction index
 } PipelineStage;
 
-PipelineStage if_stage = {0, {0}, 2, false, 0};
-PipelineStage id_stage = {0, {0}, 2, false, 0};
-PipelineStage ex_stage = {0, {0}, 2, false, 0};
-PipelineStage mem_stage = {0, {0}, 1, false, 0};
-PipelineStage wb_stage = {0, {0}, 1, false, 0};
+PipelineStage if_stage = {0, {0}, 2, false, 0, 0};
+PipelineStage id_stage = {0, {0}, 2, false, 0, 0};
+PipelineStage ex_stage = {0, {0}, 2, false, 0, 0};
+PipelineStage mem_stage = {0, {0}, 1, false, 0, 0};
+PipelineStage wb_stage = {0, {0}, 1, false, 0, 0};
 
 int total_instructions = 0;
 int instructions_fetched = 0; // Track number of instructions fetched
 int instructions_executed = 0; // Track number of instructions completed
+
+// Helper function to check for data hazards (RAW)
+bool has_data_hazard(Instruction *curr, PipelineStage *ex, PipelineStage *mem, PipelineStage *wb) {
+    if (!curr) return false;
+    // Source registers for the current instruction
+    uint8_t src_regs[3] = {0, 0, 0};
+    int src_count = 0;
+    int opcode = curr->opcode;
+    if (opcode <= 5) { // R-type: src = r2, r3
+        src_regs[0] = curr->r2;
+        src_regs[1] = curr->r3;
+        src_count = 2;
+    } else if (opcode == 7) { // JEQ: src = r1, r2
+        src_regs[0] = curr->r1;
+        src_regs[1] = curr->r2;
+        src_count = 2;
+    } else if (opcode == 8) { // XORI: src = r1
+        src_regs[0] = curr->r1;
+        src_count = 1;
+    } else if (opcode == 9) { // MOVR: src = r2
+        src_regs[0] = curr->r2;
+        src_count = 1;
+    } else if (opcode == 10) { // MOVM: src = r1 (store), r2 (address)
+        src_regs[0] = curr->r1;
+        src_regs[1] = curr->r2;
+        src_count = 2;
+    }
+    // Check EX, MEM, WB for RAW hazard
+    PipelineStage *stages[3] = {ex, mem, wb};
+    for (int i = 0; i < 3; i++) {
+        if (stages[i]->active) {
+            int dest_opcode = stages[i]->decoded.opcode;
+            uint8_t dest = 0;
+            if (dest_opcode <= 6 || dest_opcode == 8 || dest_opcode == 9) {
+                dest = stages[i]->decoded.r1;
+            } else {
+                dest = 0;
+            }
+            if (dest != 0) {
+                for (int j = 0; j < src_count; j++) {
+                    // Only skip hazard if src_regs[j] == 0 (R0)
+                    if (src_regs[j] == 0) continue;
+                    if (dest == src_regs[j]) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    // Special case: MOVM->MOVR memory hazard (check both EX and MEM stages)
+    if (curr->opcode == 9) { // MOVR in ID
+        if (ex->active && ex->decoded.opcode == 10) {
+            uint32_t movm_addr = registers[ex->decoded.r2] + ex->decoded.imm;
+            uint32_t movr_addr = registers[curr->r2] + curr->imm;
+            if (movm_addr == movr_addr) {
+                return true;
+            }
+        }
+        if (mem->active && mem->decoded.opcode == 10) {
+            uint32_t movm_addr = registers[mem->decoded.r2] + mem->decoded.imm;
+            uint32_t movr_addr = registers[curr->r2] + curr->imm;
+            if (movm_addr == movr_addr) {
+                return true;
+            }
+        }
+    }
+    // Additional fix: Stall MOVM if its source register (r1) is being written by EX, MEM, or WB
+    if (curr->opcode == 10) { // MOVM in ID
+        for (int i = 0; i < 3; i++) {
+            if (stages[i]->active) {
+                int dest_opcode = stages[i]->decoded.opcode;
+                uint8_t dest = 0;
+                if (dest_opcode <= 6 || dest_opcode == 8 || dest_opcode == 9) {
+                    dest = stages[i]->decoded.r1;
+                } else {
+                    dest = 0;
+                }
+                // Only check if dest is not R0 and matches MOVM's r1 (store value)
+                if (dest != 0 && dest == curr->r1) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
 
 void print_pipeline_state(int cycle) {
     printf("\nClock Cycle %d State:\n", cycle);
@@ -52,6 +139,7 @@ void print_pipeline_state(int cycle) {
 }
 
 void flush_pipeline() {
+    // Flush all pipeline stages
     if_stage.active = false;
     if_stage.cycles_remaining = 2;
     if_stage.instruction = 0;
@@ -63,14 +151,19 @@ void flush_pipeline() {
     memset(&id_stage.decoded, 0, sizeof(Instruction));
     id_stage.result = 0;
 
+    ex_stage.active = false;
+    mem_stage.active = false;
+    wb_stage.active = false;
     ex_stage.result = 0;
     mem_stage.result = 0;
     wb_stage.result = 0;
 
-    PC = (branch_target > 0) ? (branch_target - 1) : 0; // Adjust for PC increment in fetch
-    if (PC >= total_instructions) PC = total_instructions - 1; // Bound PC
+    // Set PC to branch_target (no -1) so next fetch is correct
+    uint32_t old_pc = PC;
+    PC = branch_target;
+    if (PC >= total_instructions) PC = total_instructions - 1;
     flush_flag = 0;
-    printf("Flushed pipeline, new PC: %d\n", PC);
+    printf("[FLUSH] Pipeline flushed. Old PC: %u, New PC: %u (Branch Target: %u)\n", old_pc, PC, branch_target);
 }
 
 void terminate_pipeline() {
@@ -119,6 +212,7 @@ int main() {
     int clock_cycle = 0;
     total_instructions = instruction_index; // Dynamically set based on file input (11 in your case)
     bool terminate = false;
+    bool stall = false; // Add stall flag
 
     while (!terminate) {
         printf("\nClock Cycle %d:\n", clock_cycle);
@@ -129,9 +223,7 @@ int main() {
             wb_stage.cycles_remaining--;
             wb_stage.active = false;
             instructions_executed++; // Increment after WB completes
-            if (!flush_flag && PC < total_instructions - 1) {
-                PC++;
-            }
+            // Removed PC++ from WB stage; PC is now only incremented in fetch
         }
 
         // Memory Stage
@@ -141,16 +233,11 @@ int main() {
             if (!wb_stage.active) {
                 if (mem_stage.decoded.opcode == 9) { // MOVR
                     extern uint32_t finalResult;
-                    mem_stage.result = finalResult; // Ensure MOVR result is correct
-                    printf("MOVR: Read value %u from memory[%d]\n", finalResult, mem_stage.decoded.addr);
-                } else if (mem_stage.decoded.opcode == 10) { // MOVM
-                    // Workaround: Assume memory is updated, force next MOVR to use R5
-                    if (mem_stage.decoded.r1 == 5) { // R5 as source
-                        memory[mem_stage.decoded.addr] = registers[5]; // Force MEM[20] = R5
-                        printf("MOVM: Forced memory[%d] = %u from R5\n", mem_stage.decoded.addr, registers[5]);
-                    }
+                    mem_stage.result = finalResult; // Value loaded from memory
+                    printf("MOVR: Read value %u from memory[%d]\n", finalResult, registers[mem_stage.decoded.r2] + mem_stage.decoded.imm);
                 }
                 wb_stage.instruction = mem_stage.instruction;
+                wb_stage.instruction_address = mem_stage.instruction_address; // propagate address
                 wb_stage.decoded = mem_stage.decoded;
                 wb_stage.result = mem_stage.result;
                 wb_stage.cycles_remaining = 1;
@@ -162,24 +249,19 @@ int main() {
         // Execute Stage
         if (ex_stage.active) {
             if (ex_stage.cycles_remaining == 1) {
-                ex_stage.result = execute(&ex_stage.decoded);
+                ex_stage.result = execute(&ex_stage.decoded, ex_stage.instruction_address); // pass correct address
                 ex_stage.cycles_remaining--;
-                if (mem_stage.decoded.opcode >= 6 && mem_stage.decoded.opcode <= 8) { // JEQ range
-                    printf("JEQ Executed: R%d = %u, R%d = %u, Should branch: %s\n",
-                           mem_stage.decoded.r1, registers[mem_stage.decoded.r1],
-                           mem_stage.decoded.r2, registers[mem_stage.decoded.r2],
-                           (registers[mem_stage.decoded.r1] == registers[mem_stage.decoded.r2]) ? "Yes" : "No");
-                }
+                // Branch/Jump logic: flush if needed
                 if (flush_flag) {
+                    // --- FLUSH PIPELINE, but allow EX to finish, and prevent any instructions after branch from writing ---
                     flush_pipeline();
-                    if (PC >= total_instructions) {
-                        terminate = true;
-                        terminate_pipeline();
-                        continue;
-                    }
+                    // After flush, EX is already done, but MEM, WB, IF, ID are cleared
+                    // Do not promote EX to MEM if flush_flag was set (skip promotion)
+                    continue;
                 }
                 if (!mem_stage.active && !terminate) {
                     mem_stage.instruction = ex_stage.instruction;
+                    mem_stage.instruction_address = ex_stage.instruction_address; // propagate address
                     mem_stage.decoded = ex_stage.decoded;
                     mem_stage.result = ex_stage.result;
                     mem_stage.cycles_remaining = 1;
@@ -191,54 +273,75 @@ int main() {
             }
         }
 
+        // Data Hazard Detection (stall logic)
+        stall = false;
+        Instruction temp_decoded = {0};
+        if (id_stage.active && id_stage.cycles_remaining == 1) {
+            // Decode instruction to check hazard
+            instruction_decode(id_stage.instruction, &temp_decoded);
+            if (has_data_hazard(&temp_decoded, &ex_stage, &mem_stage, &wb_stage)) {
+                stall = true;
+                printf("[STALL] Data hazard detected. Stalling pipeline.\n");
+            }
+        }
         // Decode Stage
         if (id_stage.active) {
-            if (id_stage.cycles_remaining == 1) {
-                instruction_decode(id_stage.instruction, &id_stage.decoded);
+            instruction_decode(id_stage.instruction, &id_stage.decoded);
+            if (id_stage.cycles_remaining == 1 && !stall) {
                 id_stage.cycles_remaining--;
                 if (!ex_stage.active && !terminate) {
                     ex_stage.instruction = id_stage.instruction;
+                    ex_stage.instruction_address = id_stage.instruction_address; // propagate address
                     ex_stage.decoded = id_stage.decoded;
                     ex_stage.result = 0;
                     ex_stage.cycles_remaining = 2;
                     ex_stage.active = true;
                     id_stage.active = false;
                 }
-            } else {
+            } else if (!stall) {
                 id_stage.cycles_remaining--;
             }
         }
 
         // Fetch Stage
-        if (!terminate && flagwork && PC < total_instructions && instruction_memory[PC] != 0 && instructions_fetched < total_instructions) {
-            if (!mem_stage.active && (!if_stage.active || (if_stage.cycles_remaining == 0 && !id_stage.active))) {
+        if (!terminate && flagwork && !stall && !flush_flag && PC < total_instructions && instruction_memory[PC] != 0 && instructions_fetched < total_instructions) {
+            if (!if_stage.active) {
                 if_stage.instruction = instruction_fetch(instruction_memory);
+                if_stage.instruction_address = PC; // Store the address before incrementing PC
                 if_stage.cycles_remaining = 2;
                 if_stage.active = true;
                 instructions_fetched++;
-            } else if (if_stage.active && if_stage.cycles_remaining == 1) {
-                if_stage.cycles_remaining--;
-                if (!id_stage.active) {
-                    id_stage.instruction = if_stage.instruction;
-                    id_stage.cycles_remaining = 2;
-                    id_stage.active = true;
-                    if_stage.active = false;
-                }
-            } else if (if_stage.active) {
-                if_stage.cycles_remaining--;
+                PC++; // PC is incremented here after a successful fetch
             }
-        } else if (PC >= total_instructions) {
-            if_stage.active = false; // Force stop fetching if beyond instructions
         }
+        // IF to ID progression (only if not stalling)
+        if (if_stage.active && if_stage.cycles_remaining == 1 && !stall) {
+            if_stage.cycles_remaining--;
+            if (!id_stage.active) {
+                id_stage.instruction = if_stage.instruction;
+                id_stage.instruction_address = if_stage.instruction_address; // propagate address
+                id_stage.cycles_remaining = 2;
+                id_stage.active = true;
+                if_stage.active = false;
+            }
+        } else if (if_stage.active && !stall) {
+            if_stage.cycles_remaining--;
+        }
+        // If stalling, IF and ID hold their state (do not decrement cycles_remaining)
 
         print_pipeline_state(clock_cycle);
 
         // Exit condition
-        int max_cycles = 7 + ((instructions_executed - 1) * 2); // Dynamic cycle count
-        if ((instructions_executed >= total_instructions || // All instructions executed
-             (!if_stage.active && !id_stage.active && !ex_stage.active && 
-              !mem_stage.active && !wb_stage.active)) || 
-            (PC >= total_instructions && instructions_fetched >= total_instructions)) {
+        // Stop fetching new instructions once all have been fetched, but let pipeline drain
+        bool pipeline_empty = !if_stage.active && !id_stage.active && !ex_stage.active && !mem_stage.active && !wb_stage.active;
+        bool all_fetched = (instructions_fetched >= total_instructions || PC >= total_instructions);
+        if (pipeline_empty && all_fetched) {
+            terminate = true;
+            terminate_pipeline();
+        }
+        // Keep the hard max cycle count as a safety net
+        if (clock_cycle > 1000) { // Hard max cycle count to prevent infinite loop
+            printf("\n[ERROR] Max cycle count reached. Terminating pipeline.\n");
             terminate = true;
             terminate_pipeline();
         }

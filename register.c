@@ -51,9 +51,13 @@ void set_register(uint8_t index, uint32_t value)
 // Print all register values
 void print_registers()
 {
-    for (int i = 0; i < NUM_REGISTERS; i++)
+    // Print an empty line before printing registers
+    printf("\n");
+    // Print R0 first (always 0)
+    printf("R0  = 0\n");
+    for (int i = 1; i < NUM_REGISTERS; i++)
     {
-        printf("R%-2d = %u\n", i, registers[i]);
+        printf("R%-2d = %d\n", i, (int32_t)registers[i]);
     }
     printf("PC  = %u\n", PC);
 }

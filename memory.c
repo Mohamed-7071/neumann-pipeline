@@ -40,20 +40,20 @@ uint32_t read_memory(uint32_t address) {
 }
 
 void print_memory() {
-    printf("\n======= Full Memory Dump =======\n");
+    printf("\n======= Non-Zero Memory Locations =======\n");
     for (int i = 0; i < MEMORY_SIZE; i++) {
         uint32_t value = memory[i];
-        printf("Memory[%4d] = 0b ", i);
-        
-        // Print each bit, starting from MSB (Most Significant Bit)
-        for (int bit = 31; bit >= 0; bit--) {
-            printf("%d", (value >> bit) & 1);
-            
-            // Add a space every 4 bits for readability
-            if (bit % 4 == 0 && bit > 0) {
-                printf(" ");
+        if (value != 0) {
+            printf("Memory[%4d] = 0b ", i);
+            for (int bit = 31; bit >= 0; bit--) {
+                printf("%d", (value >> bit) & 1);
+                if (bit % 4 == 0 && bit > 0) {
+                    printf(" ");
+                }
             }
+            printf("\n");
         }
-        printf("\n");
     }
+    printf("Memory[%4d] = 0b ", 50);
+           
 }

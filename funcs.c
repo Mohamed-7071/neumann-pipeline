@@ -19,7 +19,6 @@ int flush_flag = 0;
 uint32_t branch_target = 0;
 
 // Globals for MOVR flow
-uint32_t movr_address = 0;
 uint32_t finalResult = 0;
 
 extern uint32_t PC;
@@ -56,7 +55,6 @@ uint32_t instruction_fetch(uint32_t *memory) {
 
     uint32_t instr = memory[PC];
     printf("Fetch Stage: Fetched instruction at address %u => 0x%08X\n", PC, instr);
-    PC++;  // Global PC incremented here
     return instr;
 
 
@@ -70,31 +68,51 @@ void instruction_decode(uint32_t binary_instruction, Instruction *instr) {
 
     if (opcodee >= 0 && opcodee <= 5) {
         // R-Type
-        instr->r1 = (binary_instruction >> 23) & 0x1F;
-        instr->r2 = (binary_instruction >> 18) & 0x1F;
-        instr->r3 = (binary_instruction >> 13) & 0x1F;
+        instr->r1 = (binary_instruction >> 23) & 0x1F; // destination
+        instr->r2 = (binary_instruction >> 18) & 0x1F; // source 1
+        instr->r3 = (binary_instruction >> 13) & 0x1F; // source 2
         instr->shamt = binary_instruction & 0x1FFF;
-
         instr->imm = 0;
         instr->addr = 0;
-    } else if (opcodee >= 6 && opcodee <= 10) {
-        // I-Type
+    } else if (opcodee == 6) {
+        // MOVI (I-Type): r1 = dest, imm = value
+        instr->r1 = (binary_instruction >> 23) & 0x1F;
+        instr->r2 = 0;
+        instr->imm = binary_instruction & 0x3FFFF;
+        if (instr->imm & (1 << 17)) instr->imm |= ~0x3FFFF;
+        instr->r3 = 0;
+        instr->shamt = 0;
+        instr->addr = 0;
+    } else if (opcodee == 7) {
+        // JEQ (I-Type): r1, r2, imm
         instr->r1 = (binary_instruction >> 23) & 0x1F;
         instr->r2 = (binary_instruction >> 18) & 0x1F;
         instr->imm = binary_instruction & 0x3FFFF;
-
-        // Sign-extend immediate
-        if (instr->imm & (1 << 17)) {
-            instr->imm |= ~0x3FFFF;
-        }
-
+        if (instr->imm & (1 << 17)) instr->imm |= ~0x3FFFF;
+        instr->r3 = 0;
+        instr->shamt = 0;
+        instr->addr = 0;
+    } else if (opcodee == 8) {
+        // XORI (I-Type): r1 = dest, imm = value
+        instr->r1 = (binary_instruction >> 23) & 0x1F;
+        instr->r2 = 0;
+        instr->imm = binary_instruction & 0x3FFFF;
+        if (instr->imm & (1 << 17)) instr->imm |= ~0x3FFFF;
+        instr->r3 = 0;
+        instr->shamt = 0;
+        instr->addr = 0;
+    } else if (opcodee == 9 || opcodee == 10) {
+        // MOVR/MOVM (I-Type): r1 = dest/src, r2 = addr base, imm = offset
+        instr->r1 = (binary_instruction >> 23) & 0x1F;
+        instr->r2 = (binary_instruction >> 18) & 0x1F;
+        instr->imm = binary_instruction & 0x3FFFF;
+        if (instr->imm & (1 << 17)) instr->imm |= ~0x3FFFF;
         instr->r3 = 0;
         instr->shamt = 0;
         instr->addr = 0;
     } else if (opcodee == 11) {
         // J-Type
         instr->addr = binary_instruction & 0x0FFFFFFF;
-
         instr->r1 = instr->r2 = instr->r3 = 0;
         instr->shamt = instr->imm = 0;
     } else {
@@ -105,87 +123,104 @@ void instruction_decode(uint32_t binary_instruction, Instruction *instr) {
 
 
 // Execute Stage
-uint32_t execute(Instruction *instr) {
-    int result = 0;
-
+uint32_t execute(Instruction *instr, uint32_t instruction_address) {
+    int32_t result = 0;
     switch (instr->opcode) {
-        // R-TYPE Instructions
-        case 0: result = registers[instr->r2] + registers[instr->r3]; break;
-        case 1: result = registers[instr->r2] - registers[instr->r3]; break;
-        case 2: result = registers[instr->r2] * registers[instr->r3]; break;
-        case 3: result = registers[instr->r2] & registers[instr->r3]; break;
-        case 4: result = registers[instr->r2] << (instr->shamt & 0x1FFF); break;
-        case 5: result = (uint32_t)registers[instr->r2] >> (instr->shamt & 0x1FFF); break;
-
-        // I-TYPE Instructions
-        case 6: result = instr->imm; break;
-        case 7:
+        case 0: // ADD
+            result = (int32_t)registers[instr->r2] + (int32_t)registers[instr->r3];
+            break;
+        case 1: // SUB
+            result = (int32_t)registers[instr->r2] - (int32_t)registers[instr->r3];
+            break;
+        case 2: // MUL
+            result = (int32_t)registers[instr->r2] * (int32_t)registers[instr->r3];
+            break;
+        case 3: // AND
+            result = registers[instr->r2] & registers[instr->r3];
+            break;
+        case 4: // LSL
+            result = registers[instr->r2] << (instr->shamt & 0x1FFF);
+            break;
+        case 5: // LSR
+            result = (uint32_t)registers[instr->r2] >> (instr->shamt & 0x1FFF);
+            break;
+        case 6: // MOVI
+            result = instr->imm;
+            break;
+        case 7: // JEQ
             if (registers[instr->r1] == registers[instr->r2]) {
                 flush_flag = 1;
-                branch_target = PC + instr->imm;
+                branch_target = instruction_address + instr->imm;
                 printf("JEQ: Branch taken. New PC will be %u\n", branch_target);
             } else {
                 printf("JEQ: Condition false. Continue normally.\n");
             }
             break;
-        case 8: result = registers[instr->r1] ^ instr->imm; break;
-
-        case 9: // MOVR — calculate address only
-            movr_address = registers[instr->r2] + instr->imm;
-            printf("Execute Stage: Calculated MOVR address = %u\n", movr_address);
+        case 8: // XORI
+            result = registers[instr->r1] ^ instr->imm;
             break;
-
-        case 10: // MOVM — handled in MEM
+        case 9: // MOVR (address calculation only)
+            // Actual load in MEM, write in WB
             break;
-
-        // J-TYPE Instruction
-        case 11:
+        case 10: // MOVM (store)
+            // Actual store in MEM
+            break;
+        case 11: // JMP
             flush_flag = 1;
+            printf("JMP: Decoded addr = %u\n", instr->addr);
             branch_target = instr->addr;
             printf("JMP: Jumping to address %u\n", branch_target);
             break;
-
         default:
             fprintf(stderr, "Invalid opcode: %d in Execute\n", instr->opcode);
             break;
     }
-
     printf("Execute Stage: Opcode %d, Result = %d\n", instr->opcode, result);
-    return result;
+    return (uint32_t)result;
 }
 
 
 // Memory Access
 void memory_access(uint32_t *memory, Instruction *instr) {
     if (instr->opcode == 10) { // MOVM (store)
+        // Store value from r1 into memory at address (registers[r2] + imm)
         uint32_t address = registers[instr->r2] + instr->imm;
         if (address >= MEMORY_SIZE) {
             fprintf(stderr, "MOVM Error: Address %u out of bounds.\n", address);
             exit(EXIT_FAILURE);
         }
         memory[address] = registers[instr->r1];
-        printf("MOVM: Stored value %u from R%d into memory[%u]\n",
-               registers[instr->r1], instr->r1, address);
-
-    } else if (instr->opcode == 9) { // MOVR — now reads memory here
-        if (movr_address >= MEMORY_SIZE) {
-            fprintf(stderr, "MOVR Error: Address %u out of bounds.\n", movr_address);
+        printf("[MEM] MOVM: Stored value %d from R%d into memory[%u]\n", (int32_t)registers[instr->r1], instr->r1, address);
+    } else if (instr->opcode == 9) { // MOVR (load)
+        // Load value from memory at address (registers[r2] + imm) into finalResult
+        uint32_t address = registers[instr->r2] + instr->imm;
+        if (address >= MEMORY_SIZE) {
+            fprintf(stderr, "MOVR Error: Address %u out of bounds.\n", address);
             exit(EXIT_FAILURE);
         }
-        finalResult = memory[movr_address];
-        printf("MOVR: Read value %u from memory[%u]\n", finalResult, movr_address);
+        finalResult = memory[address];
+        printf("[MEM] MOVR: Read value %d from memory[%u]\n", (int32_t)finalResult, address);
     }
 }
 
 
 // Write Back
 void write_back(Instruction *instr, uint32_t result) {
-    if (instr->opcode == 9) { // MOVR writes from finalResult
-        safe_register_write(instr->r1, finalResult, "Write Back Stage (MOVR)");
+    // Write for all R-type (0-5), MOVI (6), XORI (8), MOVR (9)
+    if (instr->opcode >= 0 && instr->opcode <= 5) {
+        printf("[WB] R-type: Writing %d to R%d\n", (int32_t)result, instr->r1);
+        safe_register_write(instr->r1, result & 0xFFFFFFFF, "Write Back Stage");
+    } else if (instr->opcode == 6) {
+        printf("[WB] MOVI: Writing %d to R%d\n", (int32_t)result, instr->r1);
+        safe_register_write(instr->r1, result & 0xFFFFFFFF, "Write Back Stage (MOVI)");
+    } else if (instr->opcode == 8) {
+        printf("[WB] XORI: Writing %d to R%d\n", (int32_t)result, instr->r1);
+        safe_register_write(instr->r1, result & 0xFFFFFFFF, "Write Back Stage (XORI)");
+    } else if (instr->opcode == 9) { // MOVR writes from finalResult
+        printf("[WB] MOVR: Writing %d to R%d\n", (int32_t)finalResult, instr->r1);
+        safe_register_write(instr->r1, finalResult & 0xFFFFFFFF, "Write Back Stage (MOVR)");
     }
-    else if (instr->opcode <= 6 || instr->opcode == 8) {
-        safe_register_write(instr->r1, result, "Write Back Stage");
-    }
+    // No write-back for MOVM (10), JEQ (7), JMP (11)
 }
 
 
