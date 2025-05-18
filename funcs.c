@@ -2,9 +2,15 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdint.h>
-#include "register.c"
-#include "memory.c"
+#include "registers.h"
+#include "memory.h"
 # include "funcs.h"
+#include "parser.h"
+
+#define FILENAME "program.txt"
+#define MAX_INSTRUCTIONS 1024
+
+extern uint32_t instruction_memory[MAX_INSTRUCTIONS];
 extern bool flagwork = true;
 
 uint32_t instruction = 0;
@@ -180,3 +186,24 @@ void write_back(Instruction *instr, uint32_t result) {
         safe_register_write(instr->r1, result, "Write Back Stage");
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

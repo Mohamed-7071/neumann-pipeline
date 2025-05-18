@@ -4,7 +4,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <ctype.h>
-#include "memory.c" 
+#include "memory.h"
 
  
 
