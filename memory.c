@@ -1,14 +1,18 @@
 // memory.c
-
+#include <string.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include "memory.h"
 
 #define MEMORY_SIZE 2048
 #define INSTRUCTION_SEGMENT_LIMIT 1024
 
 uint32_t memory[MEMORY_SIZE]; // Unified instruction + data memory
+uint32_t instruction_memory[MAX_INSTRUCTIONS] = {0};
 
+// In memory.c
+uint32_t memory[MEMORY_SIZE] = {0};
 // === Initialize memory to 0 ===
 void init_memory() {
     for (int i = 0; i < MEMORY_SIZE; i++) {

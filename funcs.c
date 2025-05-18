@@ -1,4 +1,5 @@
 // funcs.c
+#include <stdlib.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -11,7 +12,7 @@
 #define MAX_INSTRUCTIONS 1024
 
 extern uint32_t instruction_memory[MAX_INSTRUCTIONS];
-extern bool flagwork = true;
+bool flagwork = true;
 
 uint32_t instruction = 0;
 int flush_flag = 0;

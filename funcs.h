@@ -18,6 +18,11 @@ void instruction_decode(uint32_t binary_instruction, Instruction *instr);
 uint32_t execute(Instruction *instr);
 void memory_access(uint32_t *memory, Instruction *instr);
 void write_back(Instruction *instr, uint32_t result);
+char *trim_whitespace(char *str);
+uint32_t parse_instruction(const char *line);
+void print_binary(uint32_t value);
+void write_instruction_memory(uint32_t *instruction_array);
+void print_memory(void);
 
 // Global variables
 extern uint32_t instruction;
@@ -25,4 +30,5 @@ extern int flush_flag;
 extern uint32_t branch_target;
 extern uint32_t movr_address;
 extern uint32_t finalResult;
+extern bool flagwork;
 
