@@ -1,10 +1,12 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdint.h>
-#include "register.c"
-#include "memory.c"
+
+#include "registers.h"
+
+#include "memory.h"
 #include "funcs.h"
-#include "funcs.c"
+
 
 
 #define FILENAME "program.txt"
