@@ -13,7 +13,7 @@ typedef struct {
 
 // Function declarations
 void safe_register_write(uint8_t reg, uint32_t value, const char* stage);
-uint32_t instruction_fetch(uint32_t *instruction_memory);
+uint32_t instruction_fetch(uint32_t *memory);
 void instruction_decode(uint32_t binary_instruction, Instruction *instr);
 uint32_t execute(Instruction *instr);
 void memory_access(uint32_t *memory, Instruction *instr);

@@ -1,10 +1,11 @@
 // funcs.c
-
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdint.h>
 #include "register.c"
 #include "memory.c"
 # include "funcs.h"
+extern bool flagwork = true;
 
 uint32_t instruction = 0;
 int flush_flag = 0;
@@ -33,16 +34,25 @@ void safe_register_write(uint8_t reg, uint32_t value, const char* stage) {
 
 
 // Instruction Fetch
-uint32_t instruction_fetch(uint32_t *instruction_memory) {
+uint32_t instruction_fetch(uint32_t *memory) {
+    if(memory[PC]==0){
+
+        flagwork=false;
+
+    }
+
+
     if (PC > 1023) {
         fprintf(stderr, "Fetch Error: PC (%u) out of instruction memory range [0–1023].\n", PC);
         return 0;
     }
 
-    uint32_t instr = instruction_memory[PC];
+    uint32_t instr = memory[PC];
     printf("Fetch Stage: Fetched instruction at address %u => 0x%08X\n", PC, instr);
     PC++;  // Global PC incremented here
     return instr;
+
+
 }
 
 
