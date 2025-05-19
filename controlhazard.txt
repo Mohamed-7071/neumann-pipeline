@@ -1,0 +1,6 @@
+MOVI R1 5         ; R1 = 5
+MOVI R2 5         ; R2 = 5
+JEQ R1 R2 2       ; If R1 == R2 (true), branch forward 2 (to MOVI R4 99)
+MOVI R3 42        ; Should be flushed if branch is taken
+MOVI R4 99        ; Should be executed if branch is taken
+MOVI R5 77        ; Should always execute after branch

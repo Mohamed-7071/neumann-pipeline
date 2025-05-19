@@ -17,6 +17,10 @@ extern bool flagwork;
 extern int flush_flag;
 extern uint32_t branch_target;
 
+// --- Add pending flush state ---
+bool pending_flush = false;
+uint32_t branch_flush_target = 0;
+
 // Pipeline stage structures
 typedef struct {
     uint32_t instruction;
@@ -166,6 +170,32 @@ void flush_pipeline() {
     printf("[FLUSH] Pipeline flushed. Old PC: %u, New PC: %u (Branch Target: %u)\n", old_pc, PC, branch_target);
 }
 
+void flush_pipeline_after_wb() {
+    if_stage.active = false;
+    if_stage.cycles_remaining = 2;
+    if_stage.instruction = 0;
+    if_stage.result = 0;
+
+    id_stage.active = false;
+    id_stage.cycles_remaining = 2;
+    id_stage.instruction = 0;
+    memset(&id_stage.decoded, 0, sizeof(Instruction));
+    id_stage.result = 0;
+
+    ex_stage.active = false;
+    mem_stage.active = false;
+    wb_stage.active = false;
+    ex_stage.result = 0;
+    mem_stage.result = 0;
+    wb_stage.result = 0;
+
+    uint32_t old_pc = PC;
+    PC = branch_flush_target;
+    pending_flush = false;
+    flush_flag = 0;
+    printf("[FLUSH] Pipeline flushed after WB. Old PC: %u, New PC: %u (Branch Target: %u)\n", old_pc, PC, branch_flush_target);
+}
+
 void terminate_pipeline() {
     if_stage.active = false;
     id_stage.active = false;
@@ -223,7 +253,14 @@ int main() {
             wb_stage.cycles_remaining--;
             wb_stage.active = false;
             instructions_executed++; // Increment after WB completes
-            // Removed PC++ from WB stage; PC is now only incremented in fetch
+            // --- If a flush is pending, flush pipeline after WB ---
+            if (pending_flush) {
+                flush_pipeline_after_wb();
+                // After flush, skip rest of this cycle to avoid fetching/advancing pipeline in same cycle
+                print_pipeline_state(clock_cycle);
+                clock_cycle++;
+                continue;
+            }
         }
 
         // Memory Stage
@@ -251,13 +288,11 @@ int main() {
             if (ex_stage.cycles_remaining == 1) {
                 ex_stage.result = execute(&ex_stage.decoded, ex_stage.instruction_address); // pass correct address
                 ex_stage.cycles_remaining--;
-                // Branch/Jump logic: flush if needed
+                // --- Branch/Jump logic: set pending flush if needed ---
                 if (flush_flag) {
-                    // --- FLUSH PIPELINE, but allow EX to finish, and prevent any instructions after branch from writing ---
-                    flush_pipeline();
-                    // After flush, EX is already done, but MEM, WB, IF, ID are cleared
-                    // Do not promote EX to MEM if flush_flag was set (skip promotion)
-                    continue;
+                    pending_flush = true;
+                    branch_flush_target = branch_target;
+                    // Do NOT flush now; wait until WB of this instruction
                 }
                 if (!mem_stage.active && !terminate) {
                     mem_stage.instruction = ex_stage.instruction;
@@ -304,7 +339,8 @@ int main() {
         }
 
         // Fetch Stage
-        if (!terminate && flagwork && !stall && !flush_flag && PC < total_instructions && instruction_memory[PC] != 0 && instructions_fetched < total_instructions) {
+        // Only allow IF if MEM is not active this cycle
+        if (!terminate && flagwork && !stall && !flush_flag && PC < total_instructions && instruction_memory[PC] != 0 && !mem_stage.active) {
             if (!if_stage.active) {
                 if_stage.instruction = instruction_fetch(instruction_memory);
                 if_stage.instruction_address = PC; // Store the address before incrementing PC
