@@ -350,8 +350,8 @@ int main() {
                 PC++; // PC is incremented here after a successful fetch
             }
         }
-        // IF to ID progression (only if not stalling)
-        if (if_stage.active && if_stage.cycles_remaining == 1 && !stall) {
+        // IF to ID progression (only if not stalling and MEM is not active)
+        if (if_stage.active && if_stage.cycles_remaining == 1 && !stall && !mem_stage.active) {
             if_stage.cycles_remaining--;
             if (!id_stage.active) {
                 id_stage.instruction = if_stage.instruction;
@@ -360,10 +360,10 @@ int main() {
                 id_stage.active = true;
                 if_stage.active = false;
             }
-        } else if (if_stage.active && !stall) {
+        } else if (if_stage.active && !stall && !mem_stage.active) {
             if_stage.cycles_remaining--;
         }
-        // If stalling, IF and ID hold their state (do not decrement cycles_remaining)
+        // If stalling, or if MEM is active, IF and ID hold their state (do not decrement cycles_remaining)
 
         print_pipeline_state(clock_cycle);
 
