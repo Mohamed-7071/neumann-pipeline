@@ -1,0 +1,80 @@
+Pipeline Simulation Report – Package 2
+=====================================
+
+Course: Computer Systems Architecture – CSEN601
+Project: 5-Stage Pipelined Processor Simulation
+Student: Mohamed Ibrahim
+Package: 2 (Classic 5-Stage Pipeline with Structural Hazard IF/MEM)
+Date: May 19, 2025
+
+1. Introduction
+
+This report presents my implementation and results for a 5-stage pipelined processor simulator, developed as part of the CSEN601 course project. The simulator is designed to model a classic RISC pipeline, with the following five stages:
+
+- Instruction Fetch (IF)
+- Instruction Decode (ID)
+- Execute (EX)
+- Memory Access (MEM)
+- Write Back (WB)
+
+A key feature of this simulation is the enforcement of a structural hazard: the IF and MEM stages cannot be active in the same cycle, since they share a unified memory. The simulator also handles data hazards (with stalling), and prints a detailed trace of pipeline activity, including register and memory updates, after every clock cycle.
+
+2. Pipeline Design and Implementation
+
+The pipeline is carefully structured to reflect the timing and hazards described in the project specification:
+
+- The IF, ID, and EX stages each take 2 cycles per instruction.
+- The MEM and WB stages each take 1 cycle per instruction.
+- At any given clock cycle, either IF, ID, EX, WB are active, or ID, EX, MEM, WB are active (never IF and MEM together).
+- Instructions are fetched every 2 cycles, and the pipeline fills and drains in a classic, predictable pattern.
+
+Hazard handling is a central part of the design:
+- Data hazards (RAW) are detected, and the pipeline is stalled as needed to ensure correct results.
+- The structural hazard between IF and MEM is strictly enforced: the fetch stage is stalled whenever MEM is active.
+- Control hazards (branches and jumps) are handled by flushing the pipeline after the instruction is resolved.
+
+Each pipeline stage maintains a `cycles_remaining` counter, and stages only advance when their cycles are complete and the next stage is free. After every cycle, the simulator prints a full pipeline trace, showing the instruction and input values at each stage, as well as any register or memory changes.
+
+3. Output and Example Trace
+
+To demonstrate the simulator, I used the following test program:
+
+MOVI R1 10
+MOVI R2 20
+ADD R3 R1 R2
+SUB R4 R3 R2
+ADD R5 R4 R3
+XORI R5 5
+MOVI R6 99
+
+The output includes, for each clock cycle:
+- The clock cycle number
+- Which instruction is in each pipeline stage, and its input values
+- Any register or memory updates that occurred
+- The final register state after the pipeline has drained
+
+Here is a sample excerpt from the output:
+
+==============================
+Clock Cycle 1
+------------------------------
+IF: MOVI R1, #10 | Inputs: R1=0, imm=10
+ID: Inactive
+EX: Inactive
+MEM: Inactive
+WB: Inactive
+[Register Update] ...
+[Memory Update] ...
+...
+
+At the end of execution, the simulator prints the final state of all registers and any non-zero memory locations, confirming that the pipeline executed correctly and handled all hazards as expected.
+
+4. Testing and Verification
+
+I tested the pipeline with a variety of programs to ensure that data hazards, structural hazards, and control hazards were all handled correctly. The output trace matches the expected pipeline fill/drain pattern and cycle count described in the project specification and example tables. Register and memory values after execution were checked and found to be correct for all test cases.
+
+5. Conclusion
+
+This project was a valuable exercise in understanding pipelined processor design and simulation. The implemented simulator for Package 2 accurately models a classic 5-stage pipeline, including structural hazards, data hazard detection, and correct pipeline timing. The detailed trace output provides full visibility into pipeline operation, making it a useful tool for both learning and debugging.
+
+[End of Report]

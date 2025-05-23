@@ -27,7 +27,7 @@ void write_instruction_memory(uint32_t *instruction_array) {
         memory[i] = instruction_array[i];
         i++;
     }
-    printf("\nInstructions successfully written to instruction memory [0–%d]\n", i - 1);
+    printf("\nInstructions successfully written to instruction memory\n", i - 1);
 }
 
 // === Read memory from any address ===
@@ -54,6 +54,6 @@ void print_memory() {
             printf("\n");
         }
     }
-    printf("Memory[%4d] = 0b ", 50);
+    
            
 }
